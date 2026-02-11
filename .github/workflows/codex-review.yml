@@ -1,0 +1,49 @@
+name: Codex Review
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Codexが差分を確認できるよう全履歴取得
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Install Codex CLI
+      run: npm install -g @openai/codex
+
+    - name: Run Codex Review
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        # プロンプトファイルを読み込み
+        PROMPT=$(cat .github/codex/prompts/review.md)
+
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # PRの場合: 変更されたファイルをレビュー
+          codex review --uncommitted "$PROMPT"
+        else
+          # pushの場合: 最新コミットをレビュー
+          codex review HEAD~1..HEAD "$PROMPT"
+        fi
+      continue-on-error: true  # レビュー失敗してもCIは継続
+
+    - name: Upload Codex Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: codex-review-report
+        path: .codex/
+        retention-days: 30
