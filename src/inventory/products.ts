@@ -12,6 +12,7 @@ export interface ProductData {
   unit: string;
   cost_price: number;
   selling_price: number;
+  is_sellable?: boolean;
   tax_rate?: number;
   weight?: number;
   dimensions?: string;
@@ -25,6 +26,7 @@ export interface UpdateProductData {
   unit?: string;
   cost_price?: number;
   selling_price?: number;
+  is_sellable?: boolean;
   tax_rate?: number;
   weight?: number;
   dimensions?: string;
@@ -83,12 +85,24 @@ export class ProductsService {
       throw new ValidationError('Valid cost price is required');
     }
 
-    if (data.selling_price === undefined || data.selling_price < 0) {
-      throw new ValidationError('Valid selling price is required');
-    }
+    // is_sellableがtrueの場合のみ、販売価格のバリデーションを行う
+    const isSellable = data.is_sellable !== undefined ? data.is_sellable : true;
 
-    if (data.selling_price < data.cost_price) {
-      throw new ValidationError('Selling price cannot be less than cost price');
+    if (isSellable) {
+      if (data.selling_price === undefined || data.selling_price < 0) {
+        throw new ValidationError('Valid selling price is required for sellable products');
+      }
+
+      if (data.selling_price < data.cost_price) {
+        throw new ValidationError('Selling price cannot be less than cost price');
+      }
+    } else {
+      // 販売しない品目の場合、selling_priceは0でも許可（ただし負数は不可）
+      if (data.selling_price === undefined) {
+        data.selling_price = 0;
+      } else if (data.selling_price < 0) {
+        throw new ValidationError('Selling price cannot be negative');
+      }
     }
 
     if (data.tax_rate !== undefined && (data.tax_rate < 0 || data.tax_rate > 1)) {
@@ -112,11 +126,13 @@ export class ProductsService {
       const code = data.code || this.getNextCode();
       const now = getCurrentTimestamp();
 
+      const isSellable = data.is_sellable !== undefined ? data.is_sellable : true;
+
       const stmt = this.db.prepare(`
         INSERT INTO products (
-          id, code, name, category, unit, cost_price, selling_price,
+          id, code, name, category, unit, cost_price, selling_price, is_sellable,
           tax_rate, weight, dimensions, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
@@ -127,6 +143,7 @@ export class ProductsService {
         data.unit.trim(),
         data.cost_price,
         data.selling_price,
+        isSellable ? 1 : 0,
         data.tax_rate || 0.10,
         data.weight || null,
         data.dimensions || null,
@@ -196,10 +213,13 @@ export class ProductsService {
         if (data.cost_price < 0) {
           throw new ValidationError('Cost price cannot be negative');
         }
-        // Check if cost_price would be greater than selling_price
-        const currentSellingPrice = data.selling_price !== undefined ? data.selling_price : existing.selling_price;
-        if (data.cost_price > currentSellingPrice) {
-          throw new ValidationError('Cost price cannot be greater than selling price');
+        // 販売可能品目の場合のみ、cost_price <= selling_priceをチェック
+        const currentIsSellable = data.is_sellable !== undefined ? data.is_sellable : (existing.is_sellable !== false);
+        if (currentIsSellable) {
+          const currentSellingPrice = data.selling_price !== undefined ? data.selling_price : existing.selling_price;
+          if (data.cost_price > currentSellingPrice) {
+            throw new ValidationError('Cost price cannot be greater than selling price');
+          }
         }
         updates.push('cost_price = ?');
         values.push(data.cost_price);
@@ -232,6 +252,10 @@ export class ProductsService {
       if (data.is_active !== undefined) {
         updates.push('is_active = ?');
         values.push(data.is_active ? 1 : 0);
+      }
+      if (data.is_sellable !== undefined) {
+        updates.push('is_sellable = ?');
+        values.push(data.is_sellable ? 1 : 0);
       }
 
       if (updates.length === 0) {
@@ -414,6 +438,7 @@ export class ProductsService {
       unit: row.unit,
       cost_price: row.cost_price,
       selling_price: row.selling_price,
+      is_sellable: row.is_sellable === 1,
       tax_rate: row.tax_rate,
       weight: row.weight,
       dimensions: row.dimensions,
