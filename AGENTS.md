@@ -1,49 +1,41 @@
-# Review Guidelines for mini-SAP ERP System
+# AGENTS
 
-## Critical Checks (P0)
-- Don't log PII (customer data, payment information)
-- Verify authentication middleware wraps every API route
-- Check for SQL injection vulnerabilities in all database queries
-- Ensure financial calculations use `floorToDecimal()` for precision
-- Validate that `subtotal + tax_amount = total_amount` in all transactions
+## Codex Review Contract (Strict v2)
 
-## Important Checks (P1)
-- Products with `is_sellable=true` must have `selling_price >= cost_price`
-- Products with `is_sellable=false` cannot appear in sales orders
-- Stock quantities cannot be negative
-- All monetary fields must use proper decimal precision
-- TypeScript: avoid `any` types, use specific interfaces
-- Treat typos in API documentation as P1
+### 1. Scope
+- Review target is PR diff only.
+- If a risk exists outside diff, mark it as out-of-scope risk.
+- Do not claim verification for code not present in diff.
 
-## Code Quality (P2)
-- Check for code duplication in service classes
-- Verify proper error handling in async operations
-- Ensure all database operations set `created_at` and `updated_at`
-- Use soft deletes where appropriate (is_active flag)
+### 2. Priority Rule
+- Report all priorities: P0, P1, P2, P3.
+- Each finding must include risk score (1-10).
 
-## Business Logic
-- Inventory: allocated stock cannot exceed on-hand stock
-- Sales: verify customer credit limits before order confirmation
-- Purchasing: ensure supplier payment terms are respected
-- Accounting: all journal entries must balance (debit = credit)
+### 3. Mandatory Categories
+- Security
+- Correctness / Data integrity
+- Error handling
+- Performance
+- Maintainability
+- Test coverage
+- Logging / observability
+- Architecture consistency
 
-<!-- CODEX_SCORECARD_POLICY_START -->
-## Codex Scorecard Review Policy
-When requesting Codex pull request reviews, require this output format.
+### 4. Evidence Rule
+- Every finding must include:
+  - file path
+  - line number
+  - short code snippet
+- If evidence is weak, mark as possible false positive.
 
-1. Findings (sorted by severity high to low)
-- Include all priority levels: P0, P1, P2, P3.
-- For each finding include:
-  - Risk score: 1-10
-  - Problem summary
-  - What is wrong
-  - Impact
-  - Recommended fix
-  - Relevant code snippet
-  - Suggested fixed code snippet
-- If a finding may be a false positive, state that clearly.
+### 5. Fix Proposal Rule
+- Every finding must include:
+  - what is wrong
+  - impact
+  - minimal fix approach
+  - suggested fixed code snippet or pseudo patch
 
-2. Scorecard (10-point scale)
+### 6. Scorecard (10-point)
 - Security: X/10
 - Correctness: X/10
 - Performance: X/10
@@ -51,10 +43,26 @@ When requesting Codex pull request reviews, require this output format.
 - Maintainability: X/10
 - Test Coverage: X/10
 - Overall: X/10
+- Add 1-3 deduction reasons per score.
 
-3. Scoring rationale
-- Provide 1-3 short reasons for each score deduction.
-
+### 7. Output Order
+1. Findings (high to low risk)
+2. Open questions / assumptions
+3. Scorecard
 4. Top 5 fix priorities
-- List the five most important fixes in strict priority order.
-<!-- CODEX_SCORECARD_POLICY_END -->
+
+### 8. Deduplication
+- Merge duplicate findings into one root-cause item.
+
+### 9. AI-generated Code Focus
+- For Jules/Copilot generated code, prioritize checks for:
+  - TODO or placeholder logic in runtime path
+  - weak input validation
+  - broad exception swallowing
+  - missing authorization checks
+  - insecure defaults
+  - generated code not used by runtime
+
+### 10. Language
+- Respond in Japanese.
+- Keep output concrete and technical.
