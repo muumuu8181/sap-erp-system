@@ -1,0 +1,124 @@
+name: auto-assign-copilot
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: auto-assign-copilot-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    if: contains(github.event.issue.labels.*.name, 'copilot-aw')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign issue to Copilot coding agent
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            const issueNodeId = issue.node_id;
+
+            const current = await github.graphql(
+              `query($id: ID!) {
+                node(id: $id) {
+                  ... on Issue {
+                    id
+                    assignedActors(first: 50) {
+                      nodes {
+                        ... on User { id login }
+                        ... on Bot { id login }
+                      }
+                    }
+                  }
+                }
+              }`,
+              { id: issueNodeId }
+            );
+
+            const currentActors = current.node.assignedActors.nodes || [];
+            const currentLogins = currentActors.map((a) => (a.login || '').toLowerCase());
+            if (currentLogins.includes('copilot') || currentLogins.includes('copilot-swe-agent')) {
+              core.info('Copilot is already assigned. Skipping.');
+              return;
+            }
+
+            const suggested = await github.graphql(
+              `query($owner: String!, $name: String!) {
+                repository(owner: $owner, name: $name) {
+                  suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
+                    nodes {
+                      ... on User { id login }
+                      ... on Bot { id login }
+                    }
+                  }
+                }
+              }`,
+              { owner: context.repo.owner, name: context.repo.repo }
+            );
+
+            const copilot = (suggested.repository.suggestedActors.nodes || []).find(
+              (actor) => (actor.login || '').toLowerCase() === 'copilot-swe-agent'
+            );
+            if (!copilot) {
+              core.setFailed('copilot-swe-agent was not found in suggestedActors.');
+              return;
+            }
+
+            const actorIds = [...new Set([...currentActors.map((a) => a.id), copilot.id])];
+
+            await github.graphql(
+              `mutation($input: ReplaceActorsForAssignableInput!) {
+                replaceActorsForAssignable(input: $input) {
+                  __typename
+                }
+              }`,
+              {
+                input: {
+                  assignableId: issueNodeId,
+                  actorIds
+                }
+              }
+            );
+
+            await github.graphql(
+              `mutation($input: UpdateIssueInput!) {
+                updateIssue(input: $input) {
+                  __typename
+                }
+              }`,
+              { input: { id: issueNodeId } }
+            );
+
+      - name: Add trace comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const marker = '[auto-assign-copilot]';
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100
+              }
+            );
+
+            if (comments.some((c) => (c.body || '').includes(marker))) {
+              core.info('Trace comment already exists. Skipping.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `${marker} Assigned to @copilot-swe-agent because label \`copilot-aw\` is set.`
+            });
