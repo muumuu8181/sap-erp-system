@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   assign:
-    if: contains(github.event.issue.labels.*.name, 'copilot-aw')
+    if: github.event.label.name == 'copilot-aw'
     runs-on: ubuntu-latest
     steps:
       - name: Assign issue to Copilot coding agent
@@ -122,3 +122,4 @@ jobs:
               issue_number: issue.number,
               body: `${marker} Assigned to @copilot-swe-agent because label \`copilot-aw\` is set.`
             });
+
